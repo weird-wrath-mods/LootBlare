@@ -4,6 +4,8 @@ local LB_DEBUG = false
 -- Constants
 local LB_PREFIX = "LootBlare"
 local LB_SET_ROLL_TIME = "Roll time set to "
+local LB_SET_ROLL_CAPS = "RollCaps:"
+local LB_REQ_ROLL_CAPS = "ReqRollCaps"
 local BUTTON_WIDTH, BUTTON_COUNT, BUTTON_PADDING = 32, 4, 5
 local FONT_NAME, FONT_SIZE, FONT_OUTLINE = "Fonts\\FRIZQT__.TTF", 12, "OUTLINE"
 
@@ -35,9 +37,17 @@ local function lb_print(msg)
   DEFAULT_CHAT_FRAME:AddMessage("|c" .. colors.ADDON .. "LootBlare: " .. msg .. "|r")
 end
 
+local function GetMLName()
+  local lootMethod, partyMLID, raidMLIndex = GetLootMethod()
+  if lootMethod ~= "master" then return nil end
+  if raidMLIndex then return GetRaidRosterInfo(raidMLIndex) end
+  if partyMLID and partyMLID == 0 then return UnitName("player") end
+  if partyMLID then return UnitName("party" .. partyMLID) end
+  return nil
+end
+
 local function PlayerIsML()
-  local lootMethod, masterLooterPartyID = GetLootMethod()
-  return lootMethod == "master" and masterLooterPartyID and masterLooterPartyID == 0
+  return GetMLName() == UnitName("player")
 end
 
 local function GetColoredTextByQuality(text, qualityIndex)
@@ -332,6 +342,7 @@ function itemRollFrame:CHAT_MSG_SYSTEM(message)
   local _, _, newML = string.find(message, "(.+) is now the loot master")
   if newML then
     itemRollFrame:SendRollTime()
+    itemRollFrame:SendRollCaps()
     return
   end
 
@@ -370,23 +381,95 @@ function itemRollFrame:SendRollTime()
   end
 end
 
-function itemRollFrame:CHAT_MSG_ADDON(prefix, message)
-  if prefix ~= LB_PREFIX or not string.find(message, LB_SET_ROLL_TIME) then return end
-
-  local _, _, duration = string.find(message, "Roll time set to (%d+)")
-  duration = tonumber(duration)
-  if duration and duration ~= state.MLRollDuration then
-    state.MLRollDuration = duration
-    local msg = "Roll time set to " .. state.MLRollDuration .. " seconds by Master Looter."
-    if state.MLRollDuration ~= FrameShownDuration then
-      msg = msg .. " Your display time is " .. FrameShownDuration .. " seconds."
-    end
-    lb_print(msg)
+function itemRollFrame:SendRollCaps()
+  if PlayerIsML() then
+    local chan = GetNumRaidMembers() > 0 and "RAID" or "PARTY"
+    local payload = LB_SET_ROLL_CAPS .. "sr=" .. RollCap.sr .. ",ms=" .. RollCap.ms .. ",os=" .. RollCap.os .. ",tm=" .. RollCap.tm
+    SendAddonMessage(LB_PREFIX, payload, chan)
   end
 end
 
+function itemRollFrame:CHAT_MSG_ADDON(prefix, message)
+  if prefix ~= LB_PREFIX then return end
+
+  if string.find(message, LB_SET_ROLL_TIME) then
+    local _, _, duration = string.find(message, "Roll time set to (%d+)")
+    duration = tonumber(duration)
+    if duration and duration ~= state.MLRollDuration then
+      state.MLRollDuration = duration
+      local msg = "Roll time set to " .. state.MLRollDuration .. " seconds by Master Looter."
+      if state.MLRollDuration ~= FrameShownDuration then
+        msg = msg .. " Your display time is " .. FrameShownDuration .. " seconds."
+      end
+      lb_print(msg)
+    end
+    return
+  end
+
+  if string.find(message, LB_SET_ROLL_CAPS) then
+    if PlayerIsML() then return end
+    local changed = false
+    for k, v in string.gfind(message, "(%a+)=(%d+)") do
+      v = tonumber(v)
+      if state.rollCap[k] then
+        state.rollCap[k] = v
+        if MLRollCap[k] ~= v then
+          MLRollCap[k] = v
+          changed = true
+        end
+      end
+    end
+    if changed then
+      formatCache, cacheSize = {}, 0
+      lb_print("Roll caps updated by Master Looter: SR=" .. state.rollCap.sr .. " MS=" .. state.rollCap.ms .. " OS=" .. state.rollCap.os .. " TM=" .. state.rollCap.tm)
+    end
+    return
+  end
+
+  if message == LB_REQ_ROLL_CAPS then
+    self:SendRollCaps()
+    return
+  end
+end
+
+local function RequestRollCaps()
+  if GetNumPartyMembers() == 0 and GetNumRaidMembers() == 0 then return end
+  local chan = GetNumRaidMembers() > 0 and "RAID" or "PARTY"
+  SendAddonMessage(LB_PREFIX, LB_REQ_ROLL_CAPS, chan)
+end
+
+local function CheckMLChanged()
+  local ml = GetMLName()
+  if ml == state.masterLooter then return false end
+  state.masterLooter = ml
+  return true
+end
+
 function itemRollFrame:PARTY_LOOT_METHOD_CHANGED()
-  self:SendRollTime()
+  if not CheckMLChanged() then return end
+  if PlayerIsML() then
+    self:SendRollTime()
+    self:SendRollCaps()
+  else
+    RequestRollCaps()
+  end
+end
+
+function itemRollFrame:PLAYER_ENTERING_WORLD()
+  if not CheckMLChanged() then return end
+  if not PlayerIsML() then
+    RequestRollCaps()
+  end
+end
+
+-- clear back to personal settings if leaving a group
+function itemRollFrame:PARTY_MEMBERS_CHANGED()
+  if GetNumPartyMembers() == 0 and GetNumRaidMembers() == 0 then
+    for k, _ in pairs(state.rollCap) do
+      state.rollCap[k] = RollCap[k]
+    end
+    formatCache, cacheSize = {}, 0
+  end
 end
 
 function itemRollFrame:ADDON_LOADED(addon)
@@ -394,6 +477,7 @@ function itemRollFrame:ADDON_LOADED(addon)
   if FrameShownDuration == nil then FrameShownDuration = 15 end
   if FrameAutoClose == nil then FrameAutoClose = true end
   if RollCap == nil then RollCap = { sr=101, ms=100, os=99, tm=50 } end
+  if MLRollCap == nil then MLRollCap = {} end
 
   state.MLRollDuration = FrameShownDuration
   for k, _ in pairs(state.rollCap) do
@@ -408,6 +492,8 @@ itemRollFrame:RegisterEvent("CHAT_MSG_RAID_WARNING")
 itemRollFrame:RegisterEvent("CHAT_MSG_ADDON")
 itemRollFrame:RegisterEvent("CHAT_MSG_LOOT")
 itemRollFrame:RegisterEvent("PARTY_LOOT_METHOD_CHANGED")
+itemRollFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+itemRollFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 itemRollFrame:SetScript("OnEvent", function()
   itemRollFrame[event](itemRollFrame, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
 end)
@@ -472,7 +558,9 @@ SlashCmdList["LOOTBLARE"] = function(msg)
 
       RollCap[k] = newRollCap
       state.rollCap[k] = newRollCap
+      formatCache, cacheSize = {}, 0
       lb_print(string.upper(k) .. " roll cap set to " .. newRollCap)
+      itemRollFrame:SendRollCaps()
       return
     end
   end
