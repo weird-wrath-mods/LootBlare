@@ -425,9 +425,9 @@ SlashCmdList["LOOTBLARE"] = function(msg)
   if msg == "settings" then
     lb_print("Duration: " .. FrameShownDuration .. "s | Auto-close: " .. (FrameAutoClose and "on" or "off"))
     lb_print("SR roll cap: " .. RollCap["sr"])
-		lb_print("MS roll cap: " .. RollCap["ms"])
-		lb_print("OS roll cap: " .. RollCap["os"])
-		lb_print("TM roll cap: " .. RollCap["tm"])
+    lb_print("MS roll cap: " .. RollCap["ms"])
+    lb_print("OS roll cap: " .. RollCap["os"])
+    lb_print("TM roll cap: " .. RollCap["tm"])
     return
   end
   if string.find(msg, "time") then
