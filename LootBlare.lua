@@ -192,10 +192,10 @@ local function CreateItemRollFrame()
 
   -- Roll buttons
   local rollButtons = {
-    {text = "SR", tooltip = "Roll for Soft Reserve", cap = state.rollCap.sr},
-    {text = "MS", tooltip = "Roll for Main Spec", cap = state.rollCap.ms},
-    {text = "OS", tooltip = "Roll for Off Spec", cap = state.rollCap.os},
-    {text = "TM", tooltip = "Roll for Transmog", cap = state.rollCap.tm}
+    {text = "sr", tooltip = "Roll for Soft Reserve"},
+    {text = "ms", tooltip = "Roll for Main Spec"},
+    {text = "os", tooltip = "Roll for Off Spec"},
+    {text = "tm", tooltip = "Roll for Transmog"}
   }
 
   local panelWidth = frame:GetWidth()
@@ -203,12 +203,12 @@ local function CreateItemRollFrame()
 
   for i, btnData in ipairs(rollButtons) do
     local tooltip = btnData.tooltip
-    local cap = btnData.cap
+    local type = btnData.text
     local btn = CreateFrame("Button", nil, frame, UIParent)
     btn:SetWidth(BUTTON_WIDTH)
     btn:SetHeight(BUTTON_WIDTH)
     btn:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", i*spacing + (i-1)*BUTTON_WIDTH, BUTTON_PADDING)
-    btn:SetText(btnData.text)
+    btn:SetText(string.upper(type))
     btn:GetFontString():SetFont(FONT_NAME, FONT_SIZE, FONT_OUTLINE)
 
     local bg = btn:CreateTexture(nil, "BACKGROUND")
@@ -225,7 +225,7 @@ local function CreateItemRollFrame()
       GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() bg:SetVertexColor(0.2, 0.2, 0.2, 1) GameTooltip:Hide() end)
-    btn:SetScript("OnClick", function() RandomRoll(1, cap) end)
+    btn:SetScript("OnClick", function() RandomRoll(1, state.rollCap[txt]) end)
   end
 
   -- Item icon and info
@@ -472,6 +472,8 @@ SlashCmdList["LOOTBLARE"] = function(msg)
 
       RollCap[k] = newRollCap
       state.rollCap[k] = newRollCap
+      local frame = rollButtonsFrame[k] 
+      frame:SetScript("OnClick", function() RandomRoll(1, newRollCap) end)
       lb_print(string.upper(k) .. " roll cap set to " .. newRollCap)
       return
     end
