@@ -225,7 +225,7 @@ local function CreateItemRollFrame()
       GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() bg:SetVertexColor(0.2, 0.2, 0.2, 1) GameTooltip:Hide() end)
-    btn:SetScript("OnClick", function() RandomRoll(1, state.rollCap[txt]) end)
+    btn:SetScript("OnClick", function() RandomRoll(1, state.rollCap[type]) end)
   end
 
   -- Item icon and info
@@ -472,8 +472,6 @@ SlashCmdList["LOOTBLARE"] = function(msg)
 
       RollCap[k] = newRollCap
       state.rollCap[k] = newRollCap
-      local frame = rollButtonsFrame[k] 
-      frame:SetScript("OnClick", function() RandomRoll(1, newRollCap) end)
       lb_print(string.upper(k) .. " roll cap set to " .. newRollCap)
       return
     end
