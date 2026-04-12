@@ -22,8 +22,8 @@ local state = {
   rollMessages = {}, rollers = {}, isRolling = false, time_elapsed = 0,
   item_query = 0.5, times = 5, currentItem = nil,
   discover = CreateFrame("GameTooltip", "CustomTooltip1", UIParent, "GameTooltipTemplate"),
-  masterLooter = nil, srRollCap = 101, msRollCap = 100, osRollCap = 99, tmogRollCap = 50,
-  MLRollDuration = 15, rollDuration = 15,
+  masterLooter = nil, MLRollDuration = 15, rollDuration = 15,
+  rollCap = { sr = 101, ms = 100, os = 99, tm = 50, },
 }
 
 -- Caches
@@ -96,19 +96,19 @@ local function formatMsg(msg)
   if formatCache[cacheKey] then return formatCache[cacheKey] end
 
   local classColor = RAID_CLASS_COLORS[msg.class] or "FFFFFFFF"
-  local textColor = msg.maxRoll > state.msRollCap and colors.SR
-    or msg.maxRoll == state.msRollCap and colors.MS
-    or msg.maxRoll == state.osRollCap and colors.OS
-    or msg.maxRoll <= state.tmogRollCap and colors.TM
+  local textColor = msg.maxRoll > state.rollCap.ms and colors.SR
+    or msg.maxRoll == state.rollCap.ms and colors.MS
+    or msg.maxRoll == state.rollCap.os and colors.OS
+    or msg.maxRoll <= state.rollCap.tm and colors.TM
     or colors.DEFAULT
 
   local c_class = format("|c%s%-12s|r", classColor, msg.roller)
   local max_or_special
   if msg.minRoll == 1 then
-    max_or_special = msg.maxRoll == state.srRollCap and " SR"
-      or msg.maxRoll == state.msRollCap and " MS"
-      or msg.maxRoll == state.osRollCap and " OS"
-      or msg.maxRoll == state.tmogRollCap and " TM"
+    max_or_special = msg.maxRoll == state.rollCap.sr and " SR"
+      or msg.maxRoll == state.rollCap.ms and " MS"
+      or msg.maxRoll == state.rollCap.os and " OS"
+      or msg.maxRoll == state.rollCap.tm and " TM"
   end
 
   local c_min = msg.minRoll == 1 and "" or ("|cFFFF0000" .. msg.minRoll .. "|c" .. textColor .. "-")
@@ -192,10 +192,10 @@ local function CreateItemRollFrame()
 
   -- Roll buttons
   local rollButtons = {
-    {text = "SR", tooltip = "Roll for Soft Reserve", cap = state.srRollCap},
-    {text = "MS", tooltip = "Roll for Main Spec", cap = state.msRollCap},
-    {text = "OS", tooltip = "Roll for Off Spec", cap = state.osRollCap},
-    {text = "TM", tooltip = "Roll for Transmog", cap = state.tmogRollCap}
+    {text = "SR", tooltip = "Roll for Soft Reserve", cap = state.rollCap.sr},
+    {text = "MS", tooltip = "Roll for Main Spec", cap = state.rollCap.ms},
+    {text = "OS", tooltip = "Roll for Off Spec", cap = state.rollCap.os},
+    {text = "TM", tooltip = "Roll for Transmog", cap = state.rollCap.tm}
   }
 
   local panelWidth = frame:GetWidth()
@@ -393,7 +393,12 @@ function itemRollFrame:ADDON_LOADED(addon)
   if addon ~= "LootBlare" then return end
   if FrameShownDuration == nil then FrameShownDuration = 15 end
   if FrameAutoClose == nil then FrameAutoClose = true end
+  if RollCap == nil then RollCap = { sr=101, ms=100, os=99, tm=50 } end
+
   state.MLRollDuration = FrameShownDuration
+  for k, _ in pairs(state.rollCap) do
+    state.rollCap[k] = RollCap[k]
+  end
 end
 
 -- Register events
@@ -414,9 +419,18 @@ SlashCmdList["LOOTBLARE"] = function(msg)
   if msg == "help" or msg == "" then
     lb_print("LootBlare " .. GetAddOnMetadata("LootBlare", "Version") .. " displays sorted item rolls.")
     lb_print("Commands: /lb time <seconds> | /lb autoclose on/off | /lb settings")
-  elseif msg == "settings" then
+    lb_print("Commands: /lb sr <number> | /lb ms <number> | /lb os <number> | /lb tm <number>")
+    return
+  end
+  if msg == "settings" then
     lb_print("Duration: " .. FrameShownDuration .. "s | Auto-close: " .. (FrameAutoClose and "on" or "off"))
-  elseif string.find(msg, "time") then
+    lb_print("SR roll cap: " .. RollCap["sr"])
+		lb_print("MS roll cap: " .. RollCap["ms"])
+		lb_print("OS roll cap: " .. RollCap["os"])
+		lb_print("TM roll cap: " .. RollCap["tm"])
+    return
+  end
+  if string.find(msg, "time") then
     local _, _, newDuration = string.find(msg, "time (%d+)")
     newDuration = tonumber(newDuration)
     if newDuration and newDuration > 0 then
@@ -425,21 +439,43 @@ SlashCmdList["LOOTBLARE"] = function(msg)
       if PlayerIsML() then
         SendAddonMessage(LB_PREFIX, LB_SET_ROLL_TIME .. newDuration, GetNumRaidMembers() > 0 and "RAID" or "PARTY")
       end
-    else
-      lb_print("Invalid duration. Enter a number > 0.")
+
+      return
     end
-  elseif string.find(msg, "autoclose") then
+
+    lb_print("Invalid duration. Enter a number > 0.")
+    return
+  end
+  if string.find(msg, "autoclose") then
     local _, _, autoClose = string.find(msg, "autoclose (%a+)")
     if autoClose == "on" or autoClose == "true" then
       FrameAutoClose = true
       lb_print("Auto-close enabled.")
-    elseif autoClose == "off" or autoClose == "false" then
+      return
+    end
+    if autoClose == "off" or autoClose == "false" then
       FrameAutoClose = false
       lb_print("Auto-close disabled.")
-    else
-      lb_print("Invalid option. Use 'on' or 'off'.")
+      return
     end
-  else
-    lb_print("Invalid command. Type /lb help for commands.")
+
+    lb_print("Invalid option. Use 'on' or 'off'.")
+    return
   end
+  for k, _ in pairs(RollCap) do
+    if string.find(msg, k) then
+      local _, _, newRollCap = string.find(msg, k .. " (%d+)")
+      newRollCap = tonumber(newRollCap)
+      if not newRollCap or newRollCap < 0 then
+        return
+      end
+
+      RollCap[k] = newRollCap
+      state.rollCap[k] = newRollCap
+      lb_print(string.upper(k) .. " roll cap set to " .. newRollCap)
+      return
+    end
+  end
+
+  lb_print("Invalid command. Type /lb help for commands.")
 end
