@@ -6,7 +6,7 @@ local LB_PREFIX = "LootBlare"
 local LB_SET_ROLL_TIME = "Roll time set to "
 local LB_SET_ROLL_CAPS = "RollCaps:"
 local LB_REQ_ROLL_CAPS = "ReqRollCaps"
-local BUTTON_WIDTH, BUTTON_COUNT, BUTTON_PADDING = 32, 4, 5
+local BUTTON_WIDTH, BUTTON_COUNT, BUTTON_PADDING = 28, 4, 7
 local FONT_NAME, FONT_SIZE, FONT_OUTLINE = "Fonts\\FRIZQT__.TTF", 12, "OUTLINE"
 
 local RAID_CLASS_COLORS = {
@@ -15,8 +15,8 @@ local RAID_CLASS_COLORS = {
 }
 
 local colors = {
-  ADDON = "FFEDD8BB", DEFAULT = "FFFFFF00", SR = "ffe5302d", MS = "FFFFFF00",
-  OS = "FF00FF00", TM = "FF00FFFF", OTHER = "ffff80be"
+  ADDON = "FFEDD8BB", DEFAULT = "FFFFFF00", PRIO = "ffe5302d",
+  MS = "FFFFFF00", OS = "FF00FF00", TM = "FF00FFFF"
 }
 
 -- State
@@ -25,7 +25,7 @@ local state = {
   item_query = 0.5, times = 5, currentItem = nil,
   discover = CreateFrame("GameTooltip", "CustomTooltip1", UIParent, "GameTooltipTemplate"),
   masterLooter = nil, MLRollDuration = 15, rollDuration = 15,
-  rollCap = { sr = 101, ms = 100, os = 99, tm = 50, },
+  rollCap = { prio = 101, ms = 100, os = 99, tm = 50, },
 }
 
 -- Caches
@@ -57,7 +57,7 @@ end
 
 local function ExtractItemLinksFromMessage(message)
   local itemLinks = {}
-  for link in string.gfind(message, "|c.-|H(item:.-)|h.-|h|r") do
+  for link in string.gmatch(message, "|c.-|H(item:.-)|h.-|h|r") do
     table.insert(itemLinks, link)
   end
   return itemLinks
@@ -106,7 +106,7 @@ local function formatMsg(msg)
   if formatCache[cacheKey] then return formatCache[cacheKey] end
 
   local classColor = RAID_CLASS_COLORS[msg.class] or "FFFFFFFF"
-  local textColor = msg.maxRoll > state.rollCap.ms and colors.SR
+  local textColor = msg.maxRoll == state.rollCap.prio and colors.PRIO
     or msg.maxRoll == state.rollCap.ms and colors.MS
     or msg.maxRoll == state.rollCap.os and colors.OS
     or msg.maxRoll <= state.rollCap.tm and colors.TM
@@ -115,7 +115,7 @@ local function formatMsg(msg)
   local c_class = format("|c%s%-12s|r", classColor, msg.roller)
   local max_or_special
   if msg.minRoll == 1 then
-    max_or_special = msg.maxRoll == state.rollCap.sr and " SR"
+    max_or_special = msg.maxRoll == state.rollCap.prio and " Prio"
       or msg.maxRoll == state.rollCap.ms and " MS"
       or msg.maxRoll == state.rollCap.os and " OS"
       or msg.maxRoll == state.rollCap.tm and " TM"
@@ -134,7 +134,7 @@ end
 
 -- UI creation
 local function SetItemInfo(frame, itemLinkArg)
-  local itemName, itemLink, itemQuality, _, _, _, _, _, itemIcon = GetItemInfo(itemLinkArg)
+  local itemName, itemLink, itemQuality, _, _, _, _, _, _, itemIcon = GetItemInfo(itemLinkArg)
   if itemName and itemQuality < 2 and not LB_DEBUG then return false end
 
   if not itemIcon then
@@ -174,7 +174,7 @@ end
 
 local function CreateItemRollFrame()
   local frame = CreateFrame("Frame", "ItemRollFrame", UIParent)
-  frame:SetWidth(165)
+  frame:SetWidth(170)
   frame:SetHeight(220)
   frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
   frame:SetBackdrop({
@@ -202,10 +202,10 @@ local function CreateItemRollFrame()
 
   -- Roll buttons
   local rollButtons = {
-    {text = "sr", tooltip = "Roll for Soft Reserve"},
-    {text = "ms", tooltip = "Roll for Main Spec"},
-    {text = "os", tooltip = "Roll for Off Spec"},
-    {text = "tm", tooltip = "Roll for Transmog"}
+    {key = "prio", label = "Prio", tooltip = "Roll if you're named on this loot"},
+    {key = "ms",   label = "MS",   tooltip = "Main spec upgrade"},
+    {key = "os",   label = "OS",   tooltip = "Roll for Off Spec"},
+    {key = "tm",   label = "TM",   tooltip = "Roll for Transmog"},
   }
 
   local panelWidth = frame:GetWidth()
@@ -213,12 +213,12 @@ local function CreateItemRollFrame()
 
   for i, btnData in ipairs(rollButtons) do
     local tooltip = btnData.tooltip
-    local type = btnData.text
+    local key = btnData.key
     local btn = CreateFrame("Button", nil, frame, UIParent)
     btn:SetWidth(BUTTON_WIDTH)
     btn:SetHeight(BUTTON_WIDTH)
     btn:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", i*spacing + (i-1)*BUTTON_WIDTH, BUTTON_PADDING)
-    btn:SetText(string.upper(type))
+    btn:SetText(btnData.label)
     btn:GetFontString():SetFont(FONT_NAME, FONT_SIZE, FONT_OUTLINE)
 
     local bg = btn:CreateTexture(nil, "BACKGROUND")
@@ -235,7 +235,7 @@ local function CreateItemRollFrame()
       GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() bg:SetVertexColor(0.2, 0.2, 0.2, 1) GameTooltip:Hide() end)
-    btn:SetScript("OnClick", function() RandomRoll(1, state.rollCap[type]) end)
+    btn:SetScript("OnClick", function() RandomRoll(1, state.rollCap[key]) end)
   end
 
   -- Item icon and info
@@ -268,10 +268,13 @@ local function CreateItemRollFrame()
     local currentLink = frame.itemLink or state.currentItem
     if IsControlKeyDown() then
       DressUpItemLink(currentLink)
-    elseif IsShiftKeyDown() and ChatFrameEditBox:IsVisible() then
-      local itemName, itemLink, itemQuality = GetItemInfo(currentLink)
-      if itemLink then
-        ChatFrameEditBox:Insert(ITEM_QUALITY_COLORS[itemQuality].hex.."\124H"..itemLink.."\124h["..itemName.."]\124h"..FONT_COLOR_CODE_CLOSE)
+    elseif IsShiftKeyDown() then
+      local editBox = ChatEdit_GetActiveWindow()
+      if editBox and editBox:IsVisible() then
+        local itemName, itemLink, itemQuality = GetItemInfo(currentLink)
+        if itemLink then
+          editBox:Insert(ITEM_QUALITY_COLORS[itemQuality].hex.."\124H"..itemLink.."\124h["..itemName.."]\124h"..FONT_COLOR_CODE_CLOSE)
+        end
       end
     end
   end)
@@ -283,31 +286,30 @@ end
 local itemRollFrame = CreateItemRollFrame()
 
 -- Frame update handler
-itemRollFrame:SetScript("OnUpdate", function()
-  local elapsed = arg1
+itemRollFrame:SetScript("OnUpdate", function(self, elapsed)
   if not state.isRolling or not elapsed then return end
 
   state.time_elapsed = state.time_elapsed + elapsed
   state.item_query = state.item_query - elapsed
 
   local delta = state.rollDuration - state.time_elapsed
-  if this.timerText then this.timerText:SetText(format("%.1f", delta > 0 and delta or 0)) end
+  if self.timerText then self.timerText:SetText(format("%.1f", delta > 0 and delta or 0)) end
 
   if state.time_elapsed >= max(state.rollDuration, FrameShownDuration) then
-    this.timerText:SetText("0.0")
+    self.timerText:SetText("0.0")
     state.time_elapsed = 0
     state.item_query = 1.5
     state.times = 3
     state.rollMessages = {}
     state.isRolling = false
-    if FrameAutoClose and not PlayerIsML() then this:Hide() end
+    if FrameAutoClose and not PlayerIsML() then self:Hide() end
     return
   end
 
   if state.times > 0 and state.item_query < 0 and state.currentItem and not CheckItem(state.currentItem) then
     state.times = state.times - 1
   elseif state.currentItem then
-    if not SetItemInfo(this, state.currentItem) then this:Hide() end
+    if not SetItemInfo(self, state.currentItem) then self:Hide() end
     state.times = 5
   end
 end)
@@ -328,9 +330,9 @@ function itemRollFrame:CHAT_MSG_LOOT(message)
   if not who then return end
 
   local links = ExtractItemLinksFromMessage(message)
-  if links[1] and not links[2] and this.itemLink == links[1] then
+  if links[1] and not links[2] and self.itemLink == links[1] then
     resetRolls()
-    this:Hide()
+    self:Hide()
   end
 end
 
@@ -384,7 +386,7 @@ end
 function itemRollFrame:SendRollCaps()
   if PlayerIsML() then
     local chan = GetNumRaidMembers() > 0 and "RAID" or "PARTY"
-    local payload = LB_SET_ROLL_CAPS .. "sr=" .. RollCap.sr .. ",ms=" .. RollCap.ms .. ",os=" .. RollCap.os .. ",tm=" .. RollCap.tm
+    local payload = LB_SET_ROLL_CAPS .. "prio=" .. RollCap.prio .. ",ms=" .. RollCap.ms .. ",os=" .. RollCap.os .. ",tm=" .. RollCap.tm
     SendAddonMessage(LB_PREFIX, payload, chan)
   end
 end
@@ -409,7 +411,7 @@ function itemRollFrame:CHAT_MSG_ADDON(prefix, message)
   if string.find(message, LB_SET_ROLL_CAPS) then
     if PlayerIsML() then return end
     local changed = false
-    for k, v in string.gfind(message, "(%a+)=(%d+)") do
+    for k, v in string.gmatch(message, "(%w+)=(%d+)") do
       v = tonumber(v)
       if state.rollCap[k] then
         state.rollCap[k] = v
@@ -421,7 +423,7 @@ function itemRollFrame:CHAT_MSG_ADDON(prefix, message)
     end
     if changed then
       formatCache, cacheSize = {}, 0
-      lb_print("Roll caps updated by Master Looter: SR=" .. state.rollCap.sr .. " MS=" .. state.rollCap.ms .. " OS=" .. state.rollCap.os .. " TM=" .. state.rollCap.tm)
+      lb_print("Roll caps updated by Master Looter: Prio=" .. state.rollCap.prio .. " MS=" .. state.rollCap.ms .. " OS=" .. state.rollCap.os .. " TM=" .. state.rollCap.tm)
     end
     return
   end
@@ -476,7 +478,11 @@ function itemRollFrame:ADDON_LOADED(addon)
   if addon ~= "LootBlare" then return end
   if FrameShownDuration == nil then FrameShownDuration = 15 end
   if FrameAutoClose == nil then FrameAutoClose = true end
-  if RollCap == nil then RollCap = { sr=101, ms=100, os=99, tm=50 } end
+  if RollCap == nil then RollCap = {} end
+  local defaults = { prio=101, ms=100, os=99, tm=50 }
+  for k, v in pairs(defaults) do
+    if RollCap[k] == nil then RollCap[k] = v end
+  end
   if MLRollCap == nil then MLRollCap = {} end
 
   state.MLRollDuration = FrameShownDuration
@@ -494,8 +500,8 @@ itemRollFrame:RegisterEvent("CHAT_MSG_LOOT")
 itemRollFrame:RegisterEvent("PARTY_LOOT_METHOD_CHANGED")
 itemRollFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 itemRollFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-itemRollFrame:SetScript("OnEvent", function()
-  itemRollFrame[event](itemRollFrame, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
+itemRollFrame:SetScript("OnEvent", function(self, event, ...)
+  if self[event] then self[event](self, ...) end
 end)
 
 -- Slash commands
@@ -505,12 +511,12 @@ SlashCmdList["LOOTBLARE"] = function(msg)
   if msg == "help" or msg == "" then
     lb_print("LootBlare " .. GetAddOnMetadata("LootBlare", "Version") .. " displays sorted item rolls.")
     lb_print("Commands: /lb time <seconds> | /lb autoclose on/off | /lb settings")
-    lb_print("Commands: /lb sr <number> | /lb ms <number> | /lb os <number> | /lb tm <number>")
+    lb_print("Commands: /lb prio <n> | /lb ms <n> | /lb os <n> | /lb tm <n>")
     return
   end
   if msg == "settings" then
     lb_print("Duration: " .. FrameShownDuration .. "s | Auto-close: " .. (FrameAutoClose and "on" or "off"))
-    lb_print("SR roll cap: " .. RollCap["sr"])
+    lb_print("Prio roll cap: " .. RollCap["prio"])
     lb_print("MS roll cap: " .. RollCap["ms"])
     lb_print("OS roll cap: " .. RollCap["os"])
     lb_print("TM roll cap: " .. RollCap["tm"])
@@ -548,21 +554,16 @@ SlashCmdList["LOOTBLARE"] = function(msg)
     lb_print("Invalid option. Use 'on' or 'off'.")
     return
   end
-  for k, _ in pairs(RollCap) do
-    if string.find(msg, k) then
-      local _, _, newRollCap = string.find(msg, k .. " (%d+)")
-      newRollCap = tonumber(newRollCap)
-      if not newRollCap or newRollCap < 0 then
-        return
-      end
-
-      RollCap[k] = newRollCap
-      state.rollCap[k] = newRollCap
-      formatCache, cacheSize = {}, 0
-      lb_print(string.upper(k) .. " roll cap set to " .. newRollCap)
-      itemRollFrame:SendRollCaps()
-      return
-    end
+  local _, _, capKey, capVal = string.find(msg, "^(%w+)%s+(%d+)")
+  if capKey and RollCap[capKey] then
+    local n = tonumber(capVal)
+    if not n or n < 0 then return end
+    RollCap[capKey] = n
+    state.rollCap[capKey] = n
+    formatCache, cacheSize = {}, 0
+    lb_print(string.upper(capKey) .. " roll cap set to " .. n)
+    itemRollFrame:SendRollCaps()
+    return
   end
 
   lb_print("Invalid command. Type /lb help for commands.")
