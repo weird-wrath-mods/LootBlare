@@ -11,7 +11,8 @@ local FONT_NAME, FONT_SIZE, FONT_OUTLINE = "Fonts\\FRIZQT__.TTF", 12, "OUTLINE"
 
 local RAID_CLASS_COLORS = {
   Warrior = "FFC79C6E", Mage = "FF69CCF0", Rogue = "FFFFF569", Druid = "FFFF7D0A",
-  Hunter = "FFABD473", Shaman = "FF0070DE", Priest = "FFFFFFFF", Warlock = "FF9482C9", Paladin = "FFF58CBA"
+  Hunter = "FFABD473", Shaman = "FF0070DE", Priest = "FFFFFFFF", Warlock = "FF9482C9", Paladin = "FFF58CBA",
+  DeathKnight = "FFC41F3B"
 }
 
 local colors = {
